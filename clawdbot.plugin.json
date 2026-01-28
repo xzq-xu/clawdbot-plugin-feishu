@@ -1,0 +1,37 @@
+{
+    "id": "feishu",
+    "name": "Feishu",
+    "description": "Feishu/Lark channel plugin for Clawdbot",
+    "version": "0.0.2",
+    "channels": [
+        "feishu"
+    ],
+    "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "appId": {
+                "type": "string",
+                "description": "Feishu App ID"
+            },
+            "appSecret": {
+                "type": "string",
+                "description": "Feishu App Secret"
+            }
+        },
+        "required": [
+            "appId",
+            "appSecret"
+        ]
+    },
+    "uiHints": {
+        "appId": {
+            "label": "App ID",
+            "placeholder": "cli_xxxxxxxx"
+        },
+        "appSecret": {
+            "label": "App Secret",
+            "sensitive": true
+        }
+    }
+}
