@@ -37,7 +37,7 @@ export interface MessageHandlerParams {
 // ============================================================================
 
 export async function handleMessage(params: MessageHandlerParams): Promise<void> {
-  const { cfg, event, botOpenId, botName, runtime, chatHistories } = params;
+  const { cfg, event, botOpenId, botName: _botName, runtime, chatHistories } = params;
   const feishuCfg = cfg.channels?.feishu as Config | undefined;
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
@@ -142,11 +142,6 @@ export async function handleMessage(params: MessageHandlerParams): Promise<void>
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
-    // Build bot identity context for agent clarity
-    const botIdentity = botName
-      ? `[You are "${botName}". The sender is talking TO YOU in this message. Respond as ${botName}.]\n\n`
-      : "";
-
     // Build message body
     let messageBody = parsed.content;
     if (quotedContent) {
@@ -158,7 +153,7 @@ export async function handleMessage(params: MessageHandlerParams): Promise<void>
       from: isGroup ? parsed.chatId : parsed.senderOpenId,
       timestamp: new Date(),
       envelope: envelopeOptions,
-      body: botIdentity + messageBody,
+      body: messageBody,
     });
 
     let combinedBody = body;
