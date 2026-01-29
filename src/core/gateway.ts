@@ -37,13 +37,14 @@ const state: GatewayState = {
   chatHistories: new Map(),
 };
 
-/**
- * Get the current bot's open_id.
- */
 export function getBotName(): string | undefined {
   return state.botName;
 }
 
+export function setBotInfo(openId: string | undefined, name: string | undefined): void {
+  state.botOpenId = openId;
+  state.botName = name;
+}
 export function getBotOpenId(): string | undefined {
   return state.botOpenId;
 }
@@ -52,10 +53,6 @@ export function getBotOpenId(): string | undefined {
 // Gateway Lifecycle
 // ============================================================================
 
-/**
- * Start the WebSocket gateway.
- * Connects to Feishu and begins processing events.
- */
 export async function startGateway(options: GatewayOptions): Promise<void> {
   const { cfg, runtime, abortSignal } = options;
   const feishuCfg = cfg.channels?.feishu as Config | undefined;
@@ -66,21 +63,20 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
     throw new Error("Feishu not configured");
   }
 
-  // Probe to get bot info
-  console.log("[feishu] Gateway: starting probe...");
+  // Probe to get bot info - MUST succeed for mention detection
   try {
     const probeResult = await probeConnection(feishuCfg);
-    console.log(`[feishu] Gateway: probe result: ok=${probeResult.ok}, error=${probeResult.error}, botOpenId=${probeResult.botOpenId}`);
-    if (probeResult.ok) {
+    if (probeResult.ok && probeResult.botOpenId) {
       state.botOpenId = probeResult.botOpenId;
       state.botName = probeResult.botName;
-      console.log(`[feishu] Gateway: bot identity: ${state.botName} (${state.botOpenId})`);
+      log(`Gateway: bot identity resolved: ${state.botName} (${state.botOpenId})`);
+    } else {
+      log(`Gateway: probe failed or no bot info: ${probeResult.error ?? "unknown"}`);
     }
   } catch (err) {
-    console.log(`[feishu] Gateway: probe failed with error: ${String(err)}`);
+    log(`Gateway: probe error: ${String(err)}`);
   }
 
-  // Only websocket mode is supported
   log("Gateway: starting WebSocket connection...");
 
   const wsClient = createWsClient(feishuCfg);
@@ -88,7 +84,6 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
 
   const eventDispatcher = new Lark.EventDispatcher({});
 
-  // Register event handlers
   eventDispatcher.register({
     "im.message.receive_v1": async (data: unknown) => {
       try {
@@ -106,86 +101,56 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
       }
     },
 
-    "im.message.message_read_v1": async () => {
-      // Ignore read receipts
-    },
-
     "im.chat.member.bot.added_v1": async (data: unknown) => {
-      try {
-        const event = data as BotAddedEvent;
-        log(`Gateway: bot added to chat ${event.chat_id}`);
-      } catch (err) {
-        error(`Gateway: error handling bot added: ${String(err)}`);
-      }
+      const event = data as BotAddedEvent;
+      log(`Gateway: bot added to chat ${event.chat_id}`);
     },
 
     "im.chat.member.bot.deleted_v1": async (data: unknown) => {
-      try {
-        const event = data as BotRemovedEvent;
-        log(`Gateway: bot removed from chat ${event.chat_id}`);
-      } catch (err) {
-        error(`Gateway: error handling bot removed: ${String(err)}`);
+      const event = data as BotRemovedEvent;
+      log(`Gateway: bot removed from chat ${event.chat_id}`);
+      if (state.chatHistories.has(event.chat_id)) {
+        state.chatHistories.delete(event.chat_id);
       }
     },
   });
 
-  // Track reconnection attempts via polling (SDK handles reconnection internally)
-  let reconnectCheckInterval: ReturnType<typeof setInterval> | null = null;
-
-  return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      if (reconnectCheckInterval) {
-        clearInterval(reconnectCheckInterval);
-        reconnectCheckInterval = null;
+  return new Promise<void>((_resolve, reject) => {
+    const onAbort = () => {
+      if (state.wsClient) {
+        try {
+          // WSClient doesn't have a close method, just clear reference
+          state.wsClient = null;
+        } catch {
+          // Ignore close errors
+        }
       }
-      if (state.wsClient === wsClient) {
-        state.wsClient = null;
-      }
-    };
-
-    const handleAbort = () => {
-      log("Gateway: abort signal received, stopping...");
-      cleanup();
-      resolve();
+      reject(new Error("Gateway aborted"));
     };
 
     if (abortSignal?.aborted) {
-      cleanup();
-      resolve();
+      onAbort();
       return;
     }
 
-    abortSignal?.addEventListener("abort", handleAbort, { once: true });
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
 
-    try {
-      wsClient.start({ eventDispatcher });
-      log("Gateway: WebSocket client started");
-
-      // Monitor reconnection status (SDK handles reconnection internally)
-      reconnectCheckInterval = setInterval(() => {
-        try {
-          const reconnectInfo = wsClient.getReconnectInfo?.();
-          if (reconnectInfo && reconnectInfo.nextConnectTime > 0) {
-            const nextConnect = new Date(reconnectInfo.nextConnectTime).toISOString();
-            log(`Gateway: reconnection scheduled at ${nextConnect}`);
-          }
-        } catch {
-          // getReconnectInfo may not be available in all SDK versions
-        }
-      }, 30000); // Check every 30 seconds
-    } catch (err) {
-      cleanup();
-      abortSignal?.removeEventListener("abort", handleAbort);
-      reject(err);
-    }
+    wsClient.start({ eventDispatcher }).then(
+      () => {
+        log("Gateway: WebSocket client started");
+      },
+      (err: Error) => {
+        error(`Gateway: WebSocket connection failed: ${err.message}`);
+        reject(err);
+      }
+    );
   });
 }
 
-/**
- * Stop the WebSocket gateway.
- */
-export function stopGateway(): void {
-  state.wsClient = null;
+export async function stopGateway(): Promise<void> {
+  if (state.wsClient) {
+    state.wsClient = null;
+  }
   state.botOpenId = undefined;
   state.botName = undefined;
   state.chatHistories.clear();

@@ -356,13 +356,21 @@ export const feishuChannel: ChannelPlugin<ResolvedAccount> = {
   // Gateway lifecycle
   gateway: {
     startAccount: async (ctx) => {
-      const { startGateway } = await import("../core/gateway.js");
+      const { startGateway, setBotInfo } = await import("../core/gateway.js");
       const feishuCfg = ctx.cfg.channels?.feishu as Config | undefined;
       if (!feishuCfg) throw new Error("Feishu not configured");
 
       ctx.setStatus({ accountId: ctx.accountId });
-      console.log("[feishu] startAccount called, starting gateway...");
       ctx.log?.info("Starting Feishu provider (websocket)");
+
+      // Probe bot info before starting gateway
+      const probeResult = await probeConnection(feishuCfg);
+      if (probeResult.ok && probeResult.botOpenId) {
+        setBotInfo(probeResult.botOpenId, probeResult.botName);
+        ctx.log?.info(`Bot identity: ${probeResult.botName} (${probeResult.botOpenId})`);
+      } else {
+        ctx.log?.info(`Probe warning: ${probeResult.error ?? "no bot info"}`);
+      }
 
       return startGateway({
         cfg: ctx.cfg,

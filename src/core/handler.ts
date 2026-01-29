@@ -52,7 +52,7 @@ export async function handleMessage(params: MessageHandlerParams): Promise<void>
   const parsed = parseMessageEvent(event, botOpenId);
   const isGroup = parsed.chatType === "group";
 
-  log(`Received message from ${parsed.senderOpenId} in ${parsed.chatId} (${parsed.chatType}), mentionedBot=${parsed.mentionedBot}, botOpenId=${botOpenId}`);
+  log(`Received message from ${parsed.senderOpenId} in ${parsed.chatId} (${parsed.chatType})`);
 
   const historyLimit = Math.max(
     0,
