@@ -1,6 +1,6 @@
 {
   "name": "@xzq_xu/feishu",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "description": "Production-grade Feishu/Lark channel plugin for Clawdbot",
   "license": "MIT",
@@ -60,6 +60,7 @@
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.30.0",
+    "@sinclair/typebox": "^0.34.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
