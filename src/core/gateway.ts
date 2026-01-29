@@ -68,7 +68,7 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
 
   // Probe to get bot info
   const probeResult = await probeConnection(feishuCfg);
-  log(`Gateway: probe result: ok=${probeResult.ok}, error=${probeResult.error}, botOpenId=${probeResult.botOpenId}`);
+  console.log(`[feishu] Gateway: probe result: ok=${probeResult.ok}, error=${probeResult.error}, botOpenId=${probeResult.botOpenId}`);
   if (probeResult.ok) {
     state.botOpenId = probeResult.botOpenId;
     state.botName = probeResult.botName;
