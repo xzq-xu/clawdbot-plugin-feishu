@@ -119,4 +119,4 @@ export type {
 } from "./types/index.js";
 
 // Tools
-export { createFeishuTools, createListMessagesTool } from "./plugin/tools.js";
+export { createListMessagesTool } from "./plugin/tools.js";
