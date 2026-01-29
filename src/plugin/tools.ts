@@ -34,8 +34,30 @@ type ListMessagesParams = Static<typeof ListMessagesToolSchema>;
 // Tool Result Helpers
 // ============================================================================
 
-function jsonResult(data: unknown): string {
-  return JSON.stringify(data, null, 2);
+interface ToolResultContent {
+  type: "text";
+  text: string;
+}
+
+interface ToolResult {
+  content: ToolResultContent[];
+  details?: unknown;
+}
+
+/**
+ * Create a tool result in the format expected by Clawdbot.
+ * Must return { content: [{ type: "text", text: "..." }], details?: ... }
+ */
+function jsonResult(data: unknown): ToolResult {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(data, null, 2),
+      },
+    ],
+    details: data,
+  };
 }
 
 // ============================================================================
