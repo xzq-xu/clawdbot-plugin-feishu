@@ -8,7 +8,7 @@
 
 ```bash
 # npm
-moltbot plugin install @xzq-xu/feishu
+moltbot plugin install @xzq_xu/feishu
 
 # GitHub (for testing)
 moltbot plugin install github:xzq-xu/clawdbot-plugin-feishu
