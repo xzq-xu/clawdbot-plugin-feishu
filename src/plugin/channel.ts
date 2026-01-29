@@ -361,6 +361,7 @@ export const feishuChannel: ChannelPlugin<ResolvedAccount> = {
       if (!feishuCfg) throw new Error("Feishu not configured");
 
       ctx.setStatus({ accountId: ctx.accountId });
+      console.log("[feishu] startAccount called, starting gateway...");
       ctx.log?.info("Starting Feishu provider (websocket)");
 
       return startGateway({
