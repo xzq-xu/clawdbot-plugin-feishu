@@ -1,86 +1,87 @@
 {
-    "name": "@samzong/feishu",
-    "version": "0.0.4",
-    "type": "module",
-    "description": "Production-grade Feishu/Lark channel plugin for Clawdbot",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/samzong/clawdbot-plugin-feishu.git"
-    },
-    "keywords": [
-        "clawdbot",
-        "feishu",
-        "lark",
-        "plugin",
-        "channel"
+  "name": "@xzq-xu/feishu",
+  "version": "0.0.4",
+  "type": "module",
+  "description": "Production-grade Feishu/Lark channel plugin for Clawdbot",
+  "license": "MIT",
+  "author": "xzq-xu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xzq-xu/clawdbot-plugin-feishu.git"
+  },
+  "keywords": [
+    "clawdbot",
+    "feishu",
+    "lark",
+    "plugin",
+    "channel"
+  ],
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "moltbot.plugin.json",
+    "clawdbot.plugin.json"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist",
+    "prerelease": "npm run lint && npm run build && npm run test && node --check dist/index.js && echo '✅ All checks passed'",
+    "dev:local": "tsx scripts/local-test.ts",
+    "version": "node scripts/sync-version.js && git add moltbot.plugin.json clawdbot.plugin.json"
+  },
+  "clawdbot": {
+    "extensions": [
+      "./src/index.ts"
     ],
-    "main": "./src/index.ts",
-    "types": "./src/index.ts",
-    "exports": {
-        ".": "./src/index.ts"
-    },
-    "files": [
-        "src",
-        "moltbot.plugin.json",
-        "clawdbot.plugin.json"
-    ],
-    "scripts": {
-        "build": "tsc",
-        "dev": "tsc --watch",
-        "lint": "eslint src/",
-        "lint:fix": "eslint src/ --fix",
-        "format": "prettier --write src/",
-        "format:check": "prettier --check src/",
-        "typecheck": "tsc --noEmit",
-        "test": "npm run build && vitest run",
-        "test:watch": "vitest",
-        "clean": "rm -rf dist",
-        "prerelease": "npm run lint && npm run build && npm run test && node --check dist/index.js && echo '✅ All checks passed'",
-        "dev:local": "tsx scripts/local-test.ts",
-        "version": "node scripts/sync-version.js && git add moltbot.plugin.json clawdbot.plugin.json"
-    },
-    "clawdbot": {
-        "extensions": [
-            "./src/index.ts"
-        ],
-        "channel": {
-            "id": "feishu",
-            "label": "Feishu",
-            "selectionLabel": "Feishu",
-            "docsPath": "/channels/feishu",
-            "docsLabel": "feishu",
-            "blurb": "Feishu enterprise messaging.",
-            "aliases": [
-                "lark"
-            ],
-            "order": 70
-        }
-    },
-    "dependencies": {
-        "@larksuiteoapi/node-sdk": "^1.30.0",
-        "zod": "^3.23.0"
-    },
-    "devDependencies": {
-        "@eslint/js": "^9.39.2",
-        "@types/node": "^22.0.0",
-        "@typescript-eslint/eslint-plugin": "^8.0.0",
-        "@typescript-eslint/parser": "^8.0.0",
-        "@vitest/coverage-v8": "^2.1.9",
-        "clawdbot": "^2026.1.24",
-        "dotenv": "^17.2.3",
-        "eslint": "^9.0.0",
-        "prettier": "^3.8.1",
-        "tsx": "^4.21.0",
-        "typescript": "^5.7.0",
-        "typescript-eslint": "^8.54.0",
-        "vite-tsconfig-paths": "^6.0.5",
-        "vitest": "^2.0.0"
-    },
-    "peerDependencies": {
-        "clawdbot": ">=2026.1.24"
-    },
-    "engines": {
-        "node": ">=20.0.0"
+    "channel": {
+      "id": "feishu",
+      "label": "Feishu",
+      "selectionLabel": "Feishu",
+      "docsPath": "/channels/feishu",
+      "docsLabel": "feishu",
+      "blurb": "Feishu enterprise messaging.",
+      "aliases": [
+        "lark"
+      ],
+      "order": 70
     }
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.30.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "clawdbot": "^2026.1.24",
+    "dotenv": "^17.2.3",
+    "eslint": "^9.0.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.54.0",
+    "vite-tsconfig-paths": "^6.0.5",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "clawdbot": ">=2026.1.24"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
 }

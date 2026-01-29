@@ -6,10 +6,10 @@
 
 ```bash
 # npm
-moltbot plugin install @samzong/feishu
+moltbot plugin install @xzq-xu/feishu
 
 # GitHub (for testing)
-moltbot plugin install github:samzong/clawdbot-plugin-feishu
+moltbot plugin install github:xzq-xu/clawdbot-plugin-feishu
 ```
 
 ## Configure
@@ -40,17 +40,17 @@ export FEISHU_APP_SECRET="xxx"
 
 ### Configuration Options
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | boolean | `false` | Enable/disable the channel |
-| `appId` | string | - | Feishu App ID |
-| `appSecret` | string | - | Feishu App Secret |
-| `domain` | `"feishu"` \| `"lark"` | `"feishu"` | API domain (China / International) |
-| `dmPolicy` | `"open"` \| `"pairing"` \| `"allowlist"` | `"pairing"` | DM access policy |
-| `allowFrom` | string[] | `[]` | User IDs allowed for DM (when `dmPolicy: "allowlist"`) |
-| `groupPolicy` | `"open"` \| `"allowlist"` \| `"disabled"` | `"allowlist"` | Group chat access policy |
-| `groupAllowFrom` | string[] | `[]` | Group IDs allowed (when `groupPolicy: "allowlist"`) |
-| `requireMention` | boolean | `true` | Require @mention in groups |
+| Field            | Type                                      | Default       | Description                                            |
+| ---------------- | ----------------------------------------- | ------------- | ------------------------------------------------------ |
+| `enabled`        | boolean                                   | `false`       | Enable/disable the channel                             |
+| `appId`          | string                                    | -             | Feishu App ID                                          |
+| `appSecret`      | string                                    | -             | Feishu App Secret                                      |
+| `domain`         | `"feishu"` \| `"lark"`                    | `"feishu"`    | API domain (China / International)                     |
+| `dmPolicy`       | `"open"` \| `"pairing"` \| `"allowlist"`  | `"pairing"`   | DM access policy                                       |
+| `allowFrom`      | string[]                                  | `[]`          | User IDs allowed for DM (when `dmPolicy: "allowlist"`) |
+| `groupPolicy`    | `"open"` \| `"allowlist"` \| `"disabled"` | `"allowlist"` | Group chat access policy                               |
+| `groupAllowFrom` | string[]                                  | `[]`          | Group IDs allowed (when `groupPolicy: "allowlist"`)    |
+| `requireMention` | boolean                                   | `true`        | Require @mention in groups                             |
 
 ## Feishu App Setup
 
@@ -65,4 +65,3 @@ export FEISHU_APP_SECRET="xxx"
 ## License
 
 [MIT](LICENSE)
-
