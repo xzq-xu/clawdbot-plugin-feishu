@@ -55,8 +55,8 @@ describe("isBotMentioned", () => {
     expect(isBotMentioned([mention], "ou_other")).toBe(false);
   });
 
-  it("returns true for any mention when botOpenId undefined", () => {
-    expect(isBotMentioned([mention], undefined)).toBe(true);
+  it("returns false when botOpenId undefined (cannot determine)", () => {
+    expect(isBotMentioned([mention], undefined)).toBe(false);
   });
 });
 

@@ -49,9 +49,9 @@ export function isBotMentioned(
     return false;
   }
 
-  // If we don't know our bot's open_id, assume any mention is us
+  // If we don't know our bot's open_id, cannot determine if mentioned
   if (!botOpenId) {
-    return mentions.length > 0;
+    return false;
   }
 
   return mentions.some((m) => m.id.open_id === botOpenId);
