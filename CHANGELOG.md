@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 > This project is forked from [samzong/clawdbot-plugin-feishu](https://github.com/samzong/clawdbot-plugin-feishu). Thanks to the original author for the foundation.
 
+## [0.1.3] - 2025-01-30
+
+### Fixed
+
+- **Batch Processing Debounce**: Fixed rapid message triggering issue
+  - Increased debounce from 500ms to 2000ms - wait for user to finish typing before responding
+  - Added max wait timer (10s) - ensures response even if messages keep coming
+  - Previously, each @mention would trigger a separate response; now batches all messages properly
+  - Added detailed logging for debugging batch processor behavior
+
 ## [0.1.2] - 2025-01-30
 
 ### Fixed

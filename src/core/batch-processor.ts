@@ -14,8 +14,8 @@ import { mentionTrigger } from "./triggers/mention.js";
 // ============================================================================
 
 const STARTUP_WINDOW_MS = 10_000;
-const IDLE_FLUSH_DELAY_MS = 1_000;
-const REALTIME_DEBOUNCE_MS = 500;
+const REALTIME_DEBOUNCE_MS = 2_000; // Increased from 500ms - wait for user to finish typing
+const MAX_BATCH_WAIT_MS = 10_000; // Max time to wait before forcing flush after first trigger
 
 // ============================================================================
 // Types
@@ -32,10 +32,11 @@ interface ChatBatchState {
   buffer: BufferedMessage[];
   hasTrigger: boolean;
   triggerMessage?: BufferedMessage;
-  batchTimer?: ReturnType<typeof setTimeout>;
-  idleTimer?: ReturnType<typeof setTimeout>;
+  debounceTimer?: ReturnType<typeof setTimeout>;
+  maxWaitTimer?: ReturnType<typeof setTimeout>;
   lastMessageAt: number;
   startupEndsAt: number;
+  firstTriggerAt?: number;
 }
 
 export interface FlushParams {
@@ -63,11 +64,13 @@ export class BatchProcessor {
   private options: BatchProcessorOptions;
   private triggers: Trigger[];
   private connectedAt: number;
+  private log: (msg: string) => void;
 
   constructor(options: BatchProcessorOptions) {
     this.options = options;
     this.triggers = options.triggers ?? [mentionTrigger];
     this.connectedAt = Date.now();
+    this.log = options.runtime?.log ?? console.log;
   }
 
   processMessage(parsed: ParsedMessage, event: MessageReceivedEvent): void {
@@ -86,6 +89,7 @@ export class BatchProcessor {
         startupEndsAt: this.connectedAt + STARTUP_WINDOW_MS,
       };
       this.chatStates.set(chatId, state);
+      this.log(`BatchProcessor: created state for ${chatId} (mode=${state.mode})`);
     }
 
     const buffered: BufferedMessage = { parsed, event };
@@ -95,12 +99,23 @@ export class BatchProcessor {
     const ctx: TriggerContext = { parsed, event };
     const triggered = this.triggers.some((t) => t.check(ctx));
 
-    if (triggered) {
+    if (triggered && !state.hasTrigger) {
+      // First trigger in this batch
       state.hasTrigger = true;
       state.triggerMessage = buffered;
+      state.firstTriggerAt = now;
+      this.log(`BatchProcessor: trigger activated for ${chatId}`);
+
+      // Set max wait timer - force flush after MAX_BATCH_WAIT_MS from first trigger
+      this.scheduleMaxWaitFlush(state);
+    } else if (triggered && state.hasTrigger) {
+      // Update trigger message to the latest one
+      state.triggerMessage = buffered;
+      this.log(`BatchProcessor: trigger message updated for ${chatId}`);
     }
 
-    this.clearIdleTimer(state);
+    // Always reset debounce timer on new message
+    this.clearDebounceTimer(state);
 
     if (state.mode === "startup") {
       this.scheduleStartupFlush(state);
@@ -110,41 +125,53 @@ export class BatchProcessor {
   }
 
   private scheduleStartupFlush(state: ChatBatchState): void {
-    if (state.batchTimer) return;
+    // Don't set new debounce timer during startup, just wait for startup window to end
+    if (state.debounceTimer) return;
 
     const now = Date.now();
     const timeUntilEnd = Math.max(0, state.startupEndsAt - now);
 
-    state.batchTimer = setTimeout(() => {
+    this.log(`BatchProcessor: startup flush scheduled in ${timeUntilEnd}ms for ${state.chatId}`);
+
+    state.debounceTimer = setTimeout(() => {
       this.flushIfTriggered(state);
     }, timeUntilEnd);
-
-    this.scheduleIdleFlush(state);
   }
 
   private scheduleRealtimeFlush(state: ChatBatchState): void {
-    this.clearBatchTimer(state);
-
-    if (state.hasTrigger) {
-      state.batchTimer = setTimeout(() => {
-        this.flushIfTriggered(state);
-      }, REALTIME_DEBOUNCE_MS);
+    // Only schedule flush if we have a trigger
+    if (!state.hasTrigger) {
+      this.log(`BatchProcessor: no trigger for ${state.chatId}, waiting...`);
+      return;
     }
 
-    this.scheduleIdleFlush(state);
+    // Debounce: wait for user to stop typing
+    this.log(`BatchProcessor: debounce timer set (${REALTIME_DEBOUNCE_MS}ms) for ${state.chatId}`);
+
+    state.debounceTimer = setTimeout(() => {
+      this.log(`BatchProcessor: debounce timer fired for ${state.chatId}`);
+      this.flushIfTriggered(state);
+    }, REALTIME_DEBOUNCE_MS);
   }
 
-  private scheduleIdleFlush(state: ChatBatchState): void {
-    state.idleTimer = setTimeout(() => {
+  private scheduleMaxWaitFlush(state: ChatBatchState): void {
+    // Clear existing max wait timer if any
+    this.clearMaxWaitTimer(state);
+
+    this.log(`BatchProcessor: max wait timer set (${MAX_BATCH_WAIT_MS}ms) for ${state.chatId}`);
+
+    state.maxWaitTimer = setTimeout(() => {
+      this.log(`BatchProcessor: max wait timer fired for ${state.chatId}`);
       this.flushIfTriggered(state);
-    }, IDLE_FLUSH_DELAY_MS);
+    }, MAX_BATCH_WAIT_MS);
   }
 
   private async flushIfTriggered(state: ChatBatchState): Promise<void> {
-    this.clearBatchTimer(state);
-    this.clearIdleTimer(state);
+    this.clearDebounceTimer(state);
+    this.clearMaxWaitTimer(state);
 
     if (!state.hasTrigger || !state.triggerMessage) {
+      this.log(`BatchProcessor: no trigger, skipping flush for ${state.chatId}`);
       state.mode = "realtime";
       return;
     }
@@ -152,6 +179,7 @@ export class BatchProcessor {
     const messages = [...state.buffer];
     const triggerMessage = state.triggerMessage;
 
+    this.log(`BatchProcessor: flushing ${messages.length} messages for ${state.chatId}`);
     this.resetState(state);
 
     try {
@@ -174,8 +202,8 @@ export class BatchProcessor {
 
   dispose(): void {
     for (const state of this.chatStates.values()) {
-      this.clearBatchTimer(state);
-      this.clearIdleTimer(state);
+      this.clearDebounceTimer(state);
+      this.clearMaxWaitTimer(state);
     }
     this.chatStates.clear();
   }
@@ -185,19 +213,20 @@ export class BatchProcessor {
     state.hasTrigger = false;
     state.triggerMessage = undefined;
     state.mode = "realtime";
+    state.firstTriggerAt = undefined;
   }
 
-  private clearBatchTimer(state: ChatBatchState): void {
-    if (state.batchTimer) {
-      clearTimeout(state.batchTimer);
-      state.batchTimer = undefined;
+  private clearDebounceTimer(state: ChatBatchState): void {
+    if (state.debounceTimer) {
+      clearTimeout(state.debounceTimer);
+      state.debounceTimer = undefined;
     }
   }
 
-  private clearIdleTimer(state: ChatBatchState): void {
-    if (state.idleTimer) {
-      clearTimeout(state.idleTimer);
-      state.idleTimer = undefined;
+  private clearMaxWaitTimer(state: ChatBatchState): void {
+    if (state.maxWaitTimer) {
+      clearTimeout(state.maxWaitTimer);
+      state.maxWaitTimer = undefined;
     }
   }
 }

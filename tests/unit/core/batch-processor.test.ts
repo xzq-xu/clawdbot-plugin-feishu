@@ -1,5 +1,10 @@
 /**
  * Unit tests for core/batch-processor.ts
+ * 
+ * Timing constants:
+ * - STARTUP_WINDOW_MS = 10_000
+ * - REALTIME_DEBOUNCE_MS = 2_000 (wait for user to finish typing)
+ * - MAX_BATCH_WAIT_MS = 10_000 (max time after first trigger)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -131,30 +136,82 @@ describe("BatchProcessor", () => {
         onFlush,
       });
 
+      // Exit startup mode
       await vi.advanceTimersByTimeAsync(11_000);
 
       const event = createMockEvent();
 
+      // Send 3 triggers with short intervals
       processor.processMessage(
         createMockParsedMessage({ mentionedBot: true, content: "trigger1" }),
         event
       );
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(500);
 
       processor.processMessage(
         createMockParsedMessage({ mentionedBot: true, content: "trigger2" }),
         event
       );
-      await vi.advanceTimersByTimeAsync(200);
+      await vi.advanceTimersByTimeAsync(500);
 
       processor.processMessage(
         createMockParsedMessage({ mentionedBot: true, content: "trigger3" }),
         event
       );
 
+      // Wait for debounce (2000ms from last message)
+      await vi.advanceTimersByTimeAsync(2_500);
+
+      // Should flush once with all 3 messages
+      expect(onFlush).toHaveBeenCalledTimes(1);
+      expect(onFlush.mock.calls[0][0].messages).toHaveLength(3);
+
+      processor.dispose();
+    });
+
+    it("resets debounce timer on each new message", async () => {
+      const onFlush = vi.fn();
+      const processor = new BatchProcessor({
+        cfg: { channels: { feishu: {} } } as never,
+        chatHistories: new Map(),
+        onFlush,
+      });
+
+      // Exit startup mode
+      await vi.advanceTimersByTimeAsync(11_000);
+
+      const event = createMockEvent();
+
+      // First trigger
+      processor.processMessage(
+        createMockParsedMessage({ mentionedBot: true, content: "trigger1" }),
+        event
+      );
+
+      // Wait 1.5 seconds (less than 2s debounce)
       await vi.advanceTimersByTimeAsync(1_500);
 
+      // Should not have flushed yet
+      expect(onFlush).not.toHaveBeenCalled();
+
+      // Send another message - this resets the debounce
+      processor.processMessage(
+        createMockParsedMessage({ mentionedBot: false, content: "more text" }),
+        event
+      );
+
+      // Wait another 1.5 seconds
+      await vi.advanceTimersByTimeAsync(1_500);
+
+      // Still should not flush (only 1.5s since last message)
+      expect(onFlush).not.toHaveBeenCalled();
+
+      // Wait the remaining time
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      // Now should have flushed
       expect(onFlush).toHaveBeenCalledTimes(1);
+      expect(onFlush.mock.calls[0][0].messages).toHaveLength(2);
 
       processor.dispose();
     });
@@ -169,9 +226,13 @@ describe("BatchProcessor", () => {
         onFlush,
       });
 
+      // Exit startup mode
+      await vi.advanceTimersByTimeAsync(11_000);
+
       const event1 = createMockEvent("oc_chat_1");
       const event2 = createMockEvent("oc_chat_2");
 
+      // Chat 1 has trigger, chat 2 doesn't
       processor.processMessage(
         createMockParsedMessage({ chatId: "oc_chat_1", mentionedBot: true }),
         event1
@@ -181,8 +242,10 @@ describe("BatchProcessor", () => {
         event2
       );
 
-      await vi.advanceTimersByTimeAsync(1_500);
+      // Wait for debounce
+      await vi.advanceTimersByTimeAsync(2_500);
 
+      // Only chat 1 should flush
       expect(onFlush).toHaveBeenCalledTimes(1);
       expect(onFlush.mock.calls[0][0].chatId).toBe("oc_chat_1");
 
@@ -197,9 +260,13 @@ describe("BatchProcessor", () => {
         onFlush,
       });
 
+      // Exit startup mode
+      await vi.advanceTimersByTimeAsync(11_000);
+
       const event1 = createMockEvent("oc_chat_1");
       const event2 = createMockEvent("oc_chat_2");
 
+      // Both chats have triggers
       processor.processMessage(
         createMockParsedMessage({ chatId: "oc_chat_1", mentionedBot: true }),
         event1
@@ -209,7 +276,8 @@ describe("BatchProcessor", () => {
         event2
       );
 
-      await vi.advanceTimersByTimeAsync(1_500);
+      // Wait for debounce
+      await vi.advanceTimersByTimeAsync(2_500);
 
       expect(onFlush).toHaveBeenCalledTimes(2);
       const chatIds = onFlush.mock.calls.map((call) => call[0].chatId);
@@ -220,8 +288,8 @@ describe("BatchProcessor", () => {
     });
   });
 
-  describe("idle flush", () => {
-    it("flushes early when idle for 1 second", async () => {
+  describe("max wait timer", () => {
+    it("forces flush after max wait time even if messages keep coming", async () => {
       const onFlush = vi.fn();
       const processor = new BatchProcessor({
         cfg: { channels: { feishu: {} } } as never,
@@ -229,12 +297,28 @@ describe("BatchProcessor", () => {
         onFlush,
       });
 
+      // Exit startup mode
+      await vi.advanceTimersByTimeAsync(11_000);
+
       const event = createMockEvent();
 
-      processor.processMessage(createMockParsedMessage({ mentionedBot: true }), event);
+      // First trigger
+      processor.processMessage(
+        createMockParsedMessage({ mentionedBot: true, content: "trigger1" }),
+        event
+      );
 
-      await vi.advanceTimersByTimeAsync(1_100);
+      // Keep sending messages every 1.5 seconds (before debounce fires)
+      // This would normally prevent flush forever
+      for (let i = 0; i < 8; i++) {
+        await vi.advanceTimersByTimeAsync(1_500);
+        processor.processMessage(
+          createMockParsedMessage({ mentionedBot: false, content: `msg ${i}` }),
+          event
+        );
+      }
 
+      // After 12 seconds total (> 10s max wait), should have flushed
       expect(onFlush).toHaveBeenCalledTimes(1);
 
       processor.dispose();
