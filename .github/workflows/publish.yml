@@ -37,12 +37,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish to npm (@nodesk/feishu)
+      - name: Publish to npm (@nodeskai/feishu)
         if: endsWith(github.ref_name, '.release')
         continue-on-error: true
         run: |
-          # Change package name to @nodesk/feishu
-          sed -i 's/"@xzq-xu\/feishu"/"@nodesk\/feishu"/' package.json
+          # Change package name to @nodeskai/feishu
+          sed -i 's/"@xzq-xu\/feishu"/"@nodeskai\/feishu"/' package.json
           npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
