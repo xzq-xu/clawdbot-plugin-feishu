@@ -314,7 +314,11 @@ declare module "clawdbot/plugin-sdk" {
     };
     reload?: { configPrefixes: string[] };
     threading?: {
-      resolveReplyToMode?(params: { cfg: ClawdbotConfig; accountId?: string | null; chatType?: string | null }): "off" | "first" | "all";
+      resolveReplyToMode?(params: {
+        cfg: ClawdbotConfig;
+        accountId?: string | null;
+        chatType?: string | null;
+      }): "off" | "first" | "all";
     };
     configSchema?: { schema: Record<string, unknown> };
     config: {

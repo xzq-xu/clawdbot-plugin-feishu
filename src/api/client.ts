@@ -79,8 +79,6 @@ export function createWsClient(config: Config): Lark.WSClient {
   });
 }
 
-
-
 /**
  * Clear the client cache.
  * Useful for testing or when credentials change.

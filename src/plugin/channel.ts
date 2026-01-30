@@ -308,7 +308,10 @@ export const feishuChannel: ChannelPlugin<ResolvedAccount> = {
         }
       }
 
-      const fallbackTableConverted = runtime.channel.text.convertMarkdownTables(text ?? "", tableMode);
+      const fallbackTableConverted = runtime.channel.text.convertMarkdownTables(
+        text ?? "",
+        tableMode
+      );
       const convertedFallback = formatMentionsForFeishu(fallbackTableConverted);
       const result = await sendTextMessage(feishuCfg, { to, text: convertedFallback });
       return { channel: "feishu", ...result };

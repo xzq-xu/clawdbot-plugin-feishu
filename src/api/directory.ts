@@ -106,7 +106,9 @@ export async function listUsers(
 
         const name = user.name ?? "";
         const matchesQuery =
-          !query || user.open_id.toLowerCase().includes(query) || name.toLowerCase().includes(query);
+          !query ||
+          user.open_id.toLowerCase().includes(query) ||
+          name.toLowerCase().includes(query);
 
         if (matchesQuery) {
           users.push({
@@ -127,7 +129,6 @@ export async function listUsers(
     return listUsersFromConfig(config, params);
   }
 }
-
 
 /**
  * List groups from Feishu API.
@@ -163,7 +164,9 @@ export async function listGroups(
 
         const name = chat.name ?? "";
         const matchesQuery =
-          !query || chat.chat_id.toLowerCase().includes(query) || name.toLowerCase().includes(query);
+          !query ||
+          chat.chat_id.toLowerCase().includes(query) ||
+          name.toLowerCase().includes(query);
 
         if (matchesQuery) {
           groups.push({
