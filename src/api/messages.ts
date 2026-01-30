@@ -15,6 +15,7 @@ import type {
   HistoryMessage,
 } from "../types/index.js";
 import { getApiClient } from "./client.js";
+import { formatMentionsForFeishu } from "../core/parser.js";
 
 // ============================================================================
 // Target Resolution
@@ -258,6 +259,7 @@ interface SendMessageResponse {
 
 /**
  * Send a text message.
+ * Automatically converts @[Name](open_id) format to Feishu native <at> tags.
  *
  * @throws Error if target is invalid or send fails
  */
@@ -270,7 +272,9 @@ export async function sendTextMessage(config: Config, params: SendTextParams): P
   }
 
   const receiveIdType = resolveReceiveIdType(receiveId);
-  const content = JSON.stringify({ text: params.text });
+  // Convert @[Name](open_id) to Feishu native <at> format
+  const formattedText = formatMentionsForFeishu(params.text);
+  const content = JSON.stringify({ text: formattedText });
 
   // Reply to existing message
   if (params.replyToMessageId) {
@@ -379,13 +383,15 @@ export async function updateCard(
 
 /**
  * Edit an existing text message.
+ * Automatically converts @[Name](open_id) format to Feishu native <at> tags.
  * Note: Feishu only allows editing messages within 24 hours.
  *
  * @throws Error if edit fails
  */
 export async function editMessage(config: Config, params: EditMessageParams): Promise<void> {
   const client = getApiClient(config);
-  const content = JSON.stringify({ text: params.text });
+  const formattedText = formatMentionsForFeishu(params.text);
+  const content = JSON.stringify({ text: formattedText });
 
   const response = (await client.im.message.update({
     path: { message_id: params.messageId },
