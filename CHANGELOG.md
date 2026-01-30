@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 > This project is forked from [samzong/clawdbot-plugin-feishu](https://github.com/samzong/clawdbot-plugin-feishu). Thanks to the original author for the foundation.
 
+## [0.2.1] - 2026-01-31
+
+### Added
+
+- **Auto-Reply Mode**: Bot can autonomously decide whether to respond in group chats
+  - Dual-condition trigger: minimum message count AND minimum time window
+  - Debounce mechanism: waits for chat to settle before evaluating
+  - Agent decision: outputs `[NO_RESPONSE]` to silently skip responding
+  - Configurable via `autoReply.enabled`, `minMessages`, `minTimeMs`, `debounceMs`
+  - @mentions always trigger response regardless of auto-reply settings
+
+### Fixed
+
+- **Auto-Reply Time Condition**: When message count is met but time isn't, now correctly waits for remaining time instead of stopping
+
 ## [0.2.0] - 2026-01-31
 
 ### Added

@@ -185,6 +185,7 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
     chatHistories: state.chatHistories,
     botOpenId: state.botOpenId,
     botName: state.botName,
+    autoReply: feishuCfg?.autoReply,
     onFlush,
   });
 

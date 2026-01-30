@@ -190,6 +190,8 @@ export interface DispatchParams {
   chatHistories?: Map<string, HistoryEntry[]>;
   historyLimit: number;
   batchedMessages?: FlushParams["messages"];
+  /** If true, agent decides whether to respond (no typing indicator, no reply-to) */
+  isAutoReply?: boolean;
 }
 
 // ============================================================================
@@ -372,6 +374,7 @@ export function createBatchFlushHandler(params: {
 }): (flushParams: FlushParams) => Promise<void> {
   const { cfg, runtime, chatHistories } = params;
   const feishuCfg = cfg.channels?.feishu as Config | undefined;
+  const log = runtime?.log ?? console.log;
 
   const historyLimit = Math.max(
     0,
@@ -381,17 +384,40 @@ export function createBatchFlushHandler(params: {
   return async (flushParams: FlushParams) => {
     if (!feishuCfg) return;
 
-    const { messages, triggerMessage } = flushParams;
+    const { messages, triggerMessage, isAutoReply } = flushParams;
 
-    await dispatchToAgent({
-      cfg,
-      feishuCfg,
-      parsed: triggerMessage.parsed,
-      runtime,
-      chatHistories,
-      historyLimit,
-      batchedMessages: messages,
-    });
+    if (isAutoReply) {
+      // Auto-reply mode: use last message as context, let agent decide whether to respond
+      const lastMessage = messages[messages.length - 1];
+      if (!lastMessage) return;
+
+      log(`[feishu] Auto-reply mode: ${messages.length} messages, agent will decide`);
+
+      await dispatchToAgent({
+        cfg,
+        feishuCfg,
+        parsed: lastMessage.parsed,
+        runtime,
+        chatHistories,
+        historyLimit,
+        batchedMessages: messages,
+        isAutoReply: true,
+      });
+    } else {
+      // Trigger mode: must respond
+      if (!triggerMessage) return;
+
+      await dispatchToAgent({
+        cfg,
+        feishuCfg,
+        parsed: triggerMessage.parsed,
+        runtime,
+        chatHistories,
+        historyLimit,
+        batchedMessages: messages,
+        isAutoReply: false,
+      });
+    }
   };
 }
 
@@ -400,7 +426,7 @@ export function createBatchFlushHandler(params: {
 // ============================================================================
 
 async function dispatchToAgent(params: DispatchParams): Promise<void> {
-  const { cfg, feishuCfg, parsed, runtime, chatHistories, historyLimit, batchedMessages } = params;
+  const { cfg, feishuCfg, parsed, runtime, chatHistories, historyLimit, batchedMessages, isAutoReply } = params;
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
   const isGroup = parsed.chatType === "group";
@@ -469,6 +495,12 @@ async function dispatchToAgent(params: DispatchParams): Promise<void> {
 
     let combinedBody: string;
 
+    // Auto-reply system hint - tells agent it can choose not to respond
+    const autoReplyHint = feishuCfg.autoReply?.systemHint ?? 
+      `[System: You are observing a group chat. You do NOT need to respond to every message. ` +
+      `Only reply if: (1) someone asks a question you can answer, (2) the topic is relevant to you, ` +
+      `(3) you have something valuable to add. If you decide not to respond, reply with exactly: [NO_RESPONSE]]`;
+
     if (batchedMessages && batchedMessages.length > 0) {
       const formattedMessages = batchedMessages.map((m) =>
         core.channel.reply.formatAgentEnvelope({
@@ -480,6 +512,11 @@ async function dispatchToAgent(params: DispatchParams): Promise<void> {
         })
       );
       combinedBody = formattedMessages.join("\n\n");
+      
+      // Prepend auto-reply hint if in auto-reply mode
+      if (isAutoReply) {
+        combinedBody = `${autoReplyHint}\n\n---\n\n${combinedBody}`;
+      }
     } else {
       let messageBody = parsed.content;
       if (quotedContent) {
@@ -544,15 +581,16 @@ async function dispatchToAgent(params: DispatchParams): Promise<void> {
       MediaTypes: mediaInfo ? [mediaInfo.contentType] : undefined,
     });
 
+    // In auto-reply mode, don't set replyToMessageId (no typing indicator, no reply style)
     const { dispatcher, replyOptions, markDispatchIdle } = createReplyDispatcher({
       cfg,
       agentId: route.agentId,
       runtime: runtime as RuntimeEnv,
       chatId: parsed.chatId,
-      replyToMessageId: parsed.messageId,
+      replyToMessageId: isAutoReply ? undefined : parsed.messageId,
     });
 
-    log(`Dispatching to agent (session=${route.sessionKey})`);
+    log(`Dispatching to agent (session=${route.sessionKey}${isAutoReply ? ", autoReply=true" : ""})`);
 
     const { queuedFinal, counts } = await core.channel.reply.dispatchReplyFromConfig({
       ctx: ctxPayload,

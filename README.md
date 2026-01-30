@@ -88,6 +88,77 @@ Supported media types:
 - **Files**: PDF, DOC, TXT, etc.
 - **Audio**: Opus/Ogg (Feishu voice messages)
 
+### Auto-Reply Options (Autonomous Mode)
+
+Enable the bot to autonomously decide whether to respond in group chats, like a human observer.
+
+| Field                  | Type    | Default | Description                                           |
+| ---------------------- | ------- | ------- | ----------------------------------------------------- |
+| `autoReply.enabled`    | boolean | `false` | Enable autonomous reply mode                          |
+| `autoReply.minMessages`| number  | `5`     | Minimum messages before considering auto-reply        |
+| `autoReply.minTimeMs`  | number  | `60000` | Minimum time window (ms) since first message          |
+| `autoReply.debounceMs` | number  | `3000`  | Wait time (ms) for no new messages before evaluating  |
+| `autoReply.systemHint` | string  | -       | Custom prompt for agent decision (optional)           |
+
+**How it works:**
+
+```
+                    消息进入
+                        │
+           ┌────────────┴────────────┐
+           │                         │
+      @bot / 触发？               否
+           │                         │
+           ▼                         ▼
+    ┌──────────────┐         累积到缓冲区
+    │ 立即触发      │         新消息重置防抖
+    │ 必须回复      │               │
+    └──────────────┘               ▼
+                           防抖到期(3s无新消息)
+                                   │
+                                   ▼
+                         双条件满足？
+                         消息数 >= N 且 时间 >= T
+                                   │
+                              ┌────┴────┐
+                            满足      不满足
+                              │         │
+                              ▼         ▼
+                       交给 Agent    继续等待
+                       让它决定
+                       是否回复
+```
+
+1. **Trigger mode** (default): Bot only responds when @mentioned - must reply
+2. **Auto-reply mode**: Bot observes group chat and decides whether to respond
+
+**Dual conditions (both must be met):**
+- `minMessages`: Accumulated message count threshold
+- `minTimeMs`: Time elapsed since first message in buffer
+
+**Debounce:** Every new message resets the debounce timer. Only when no new messages arrive for `debounceMs`, the conditions are checked.
+
+**Agent decision:** If conditions are met, the agent receives all buffered messages with a system hint. The agent can:
+- Reply normally → message sent to group
+- Output `[NO_RESPONSE]` → silently dropped, no message sent
+
+```json
+{
+  "channels": {
+    "feishu": {
+      "autoReply": {
+        "enabled": true,
+        "minMessages": 5,
+        "minTimeMs": 60000,
+        "debounceMs": 3000
+      }
+    }
+  }
+}
+```
+
+**Note:** @mentions always trigger a response regardless of auto-reply settings.
+
 ### Streaming Message Options
 
 | Field                            | Type    | Default | Description                                      |

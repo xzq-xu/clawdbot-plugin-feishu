@@ -80,6 +80,23 @@ export const HeartbeatConfigSchema = z
   .strict()
   .optional();
 
+/** Auto-reply settings for autonomous response in groups */
+export const AutoReplyConfigSchema = z
+  .object({
+    /** Enable autonomous reply mode (agent decides whether to respond) */
+    enabled: z.boolean().optional(),
+    /** Minimum number of messages before considering auto-reply (default: 5) */
+    minMessages: z.number().int().min(1).optional(),
+    /** Minimum time window in ms since first message (default: 60000 = 1 min) */
+    minTimeMs: z.number().int().positive().optional(),
+    /** Debounce time in ms - wait for no new messages (default: 3000) */
+    debounceMs: z.number().int().positive().optional(),
+    /** System prompt hint for agent to decide whether to reply */
+    systemHint: z.string().optional(),
+  })
+  .strict()
+  .optional();
+
 /** Group-specific configuration */
 export const GroupConfigSchema = z
   .object({
@@ -118,6 +135,8 @@ export const ConfigSchema = z
     requireMention: z.boolean().optional().default(true),
     groups: z.record(z.string(), GroupConfigSchema.optional()).optional(),
     historyLimit: z.number().int().min(0).optional(),
+    /** Auto-reply: agent autonomously decides whether to respond in groups */
+    autoReply: AutoReplyConfigSchema,
 
     // Message formatting
     markdown: MarkdownConfigSchema,
@@ -170,6 +189,7 @@ export type MarkdownConfig = z.infer<typeof MarkdownConfigSchema>;
 export type StreamingCoalesce = z.infer<typeof StreamingCoalesceSchema>;
 export type StreamingCard = z.infer<typeof StreamingCardSchema>;
 export type HeartbeatConfig = z.infer<typeof HeartbeatConfigSchema>;
+export type AutoReplyConfig = z.infer<typeof AutoReplyConfigSchema>;
 
 // ============================================================================
 // Credential Resolution
