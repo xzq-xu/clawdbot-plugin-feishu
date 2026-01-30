@@ -3,8 +3,6 @@
  * Creates a dispatcher that sends agent replies back to Feishu.
  */
 
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-
 import type { ClawdbotConfig, RuntimeEnv, ReplyPayload, PluginRuntime } from "clawdbot/plugin-sdk";
 import {
   createReplyPrefixContext,
@@ -37,115 +35,75 @@ interface TypingIndicatorState {
 }
 
 // ============================================================================
-// Media Detection
+// File Reference Detection
 // ============================================================================
 
 /**
- * Common image and file extensions to detect in text.
+ * File reference format: ![name](file:///path) or ![name](https://url)
+ * Similar to Markdown image syntax but with file:// protocol for local files.
+ *
+ * Examples:
+ *   ![图片](file:///home/user/image.png)
+ *   ![报告](file://./documents/report.pdf)
+ *   ![Photo](https://example.com/photo.jpg)
  */
-const MEDIA_EXTENSIONS = [
-  // Images
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".ico",
-  ".tiff",
-  ".svg",
-  // Documents
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".ppt",
-  ".pptx",
-  // Audio/Video
-  ".mp3",
-  ".wav",
-  ".ogg",
-  ".opus",
-  ".mp4",
-  ".mov",
-  ".avi",
-  ".mkv",
-  // Archives
-  ".zip",
-  ".rar",
-  ".7z",
-  ".tar",
-  ".gz",
-  // Other
-  ".txt",
-  ".csv",
-  ".json",
-  ".xml",
-];
+const FILE_REFERENCE_PATTERN = /!\[([^\]]*)\]\(((?:file:\/\/|https?:\/\/)[^)]+)\)/g;
 
-/**
- * Detect if text contains a file path that should be sent as media.
- * Returns the file path if found, null otherwise.
- */
-function detectFilePath(text: string): string | null {
-  const trimmed = text.trim();
-
-  // Check if entire text is a file path
-  for (const ext of MEDIA_EXTENSIONS) {
-    if (trimmed.toLowerCase().endsWith(ext)) {
-      // Looks like a file path - check if it's a reasonable path format
-      if (
-        trimmed.startsWith("/") || // Unix absolute
-        trimmed.startsWith("~") || // Unix home
-        trimmed.startsWith("./") || // Relative
-        /^[a-zA-Z]:/.test(trimmed) || // Windows absolute
-        !trimmed.includes(" ") || // No spaces (likely a path)
-        trimmed.includes("/") // Contains path separator
-      ) {
-        return trimmed;
-      }
-    }
-  }
-
-  // Check for URLs
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    const urlParts = trimmed.split(/\s/);
-    const url = urlParts[0];
-    if (url) {
-      for (const ext of MEDIA_EXTENSIONS) {
-        if (url.toLowerCase().includes(ext)) {
-          return url;
-        }
-      }
-    }
-  }
-
-  return null;
+interface FileReference {
+  fullMatch: string;
+  name: string;
+  path: string;
 }
 
 /**
- * Extract file path from text that may contain additional content.
- * Returns { filePath, remainingText } or null if no file found.
+ * Extract file references from text.
  */
-function extractFileFromText(text: string): { filePath: string; remainingText: string } | null {
-  const lines = text.split("\n");
+function extractFileReferences(text: string): FileReference[] {
+  const refs: FileReference[] = [];
+  let match;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) continue;
+  while ((match = FILE_REFERENCE_PATTERN.exec(text)) !== null) {
+    refs.push({
+      fullMatch: match[0],
+      name: match[1] || "file",
+      path: match[2] ?? "",
+    });
+  }
 
-    const filePath = detectFilePath(line.trim());
-    if (filePath) {
-      const remainingLines = [...lines.slice(0, i), ...lines.slice(i + 1)];
-      return {
-        filePath,
-        remainingText: remainingLines.join("\n").trim(),
-      };
+  // Reset regex lastIndex
+  FILE_REFERENCE_PATTERN.lastIndex = 0;
+
+  return refs;
+}
+
+/**
+ * Convert file:// path to actual file path.
+ */
+function fileUrlToPath(fileUrl: string): string {
+  if (fileUrl.startsWith("file://")) {
+    const path = fileUrl.slice(7); // Remove "file://"
+
+    // Handle file:///absolute/path (3 slashes = absolute)
+    // Handle file://./relative/path (2 slashes = relative)
+    // Handle file://~/home/path (2 slashes = home)
+
+    if (path.startsWith("/")) {
+      // Absolute path: file:///home/user/file.png -> /home/user/file.png
+      return path;
+    } else if (path.startsWith("./") || path.startsWith("../")) {
+      // Relative path: file://./path -> ./path
+      return path;
+    } else if (path.startsWith("~")) {
+      // Home path: file://~/path -> ~/path
+      return path;
+    } else {
+      // Default: treat as relative
+      return "./" + path;
     }
   }
 
-  return null;
+  // HTTP(S) URL - return as-is
+  return fileUrl;
 }
 
 // ============================================================================
@@ -235,17 +193,26 @@ export function createReplyDispatcher(params: CreateReplyDispatcherParams) {
           return;
         }
 
-        // Check if text contains a file path to send as media
-        const fileExtract = extractFileFromText(text);
-        if (fileExtract && feishuCfg) {
-          params.runtime.log?.(`Deliver: detected file path: ${fileExtract.filePath}`);
+        if (!feishuCfg) {
+          params.runtime.error?.(`Deliver: feishuCfg not available`);
+          return;
+        }
+
+        // Extract file references from text
+        const fileRefs = extractFileReferences(text);
+
+        if (fileRefs.length > 0) {
+          params.runtime.log?.(`Deliver: found ${fileRefs.length} file reference(s)`);
+
+          // Remove file references from text
+          let remainingText = text;
+          for (const ref of fileRefs) {
+            remainingText = remainingText.replace(ref.fullMatch, "").trim();
+          }
 
           // Send remaining text first if any
-          if (fileExtract.remainingText.trim()) {
-            const converted = core.channel.text.convertMarkdownTables(
-              fileExtract.remainingText,
-              tableMode
-            );
+          if (remainingText.trim()) {
+            const converted = core.channel.text.convertMarkdownTables(remainingText, tableMode);
             const formattedText = formatMentionsForFeishu(converted);
             const chunks = core.channel.text.chunkTextWithMode(
               formattedText,
@@ -253,6 +220,7 @@ export function createReplyDispatcher(params: CreateReplyDispatcherParams) {
               chunkMode
             );
 
+            params.runtime.log?.(`Deliver: sending ${chunks.length} text chunks`);
             for (const chunk of chunks) {
               await sendTextMessage(feishuCfg, {
                 to: chatId,
@@ -262,28 +230,32 @@ export function createReplyDispatcher(params: CreateReplyDispatcherParams) {
             }
           }
 
-          // Send the file
-          try {
-            params.runtime.log?.(`Deliver: sending media: ${fileExtract.filePath}`);
-            await sendMedia(feishuCfg, {
-              to: chatId,
-              mediaUrl: fileExtract.filePath,
-              replyToMessageId,
-            });
-            params.runtime.log?.(`Deliver: media sent successfully`);
-          } catch (err) {
-            params.runtime.error?.(`Deliver: sendMedia failed: ${String(err)}`);
-            // Fallback to text with file path
-            await sendTextMessage(feishuCfg, {
-              to: chatId,
-              text: `📎 ${fileExtract.filePath}`,
-              replyToMessageId,
-            });
+          // Send each file
+          for (const ref of fileRefs) {
+            const filePath = fileUrlToPath(ref.path);
+            try {
+              params.runtime.log?.(`Deliver: sending file "${ref.name}" from ${filePath}`);
+              await sendMedia(feishuCfg, {
+                to: chatId,
+                mediaUrl: filePath,
+                fileName: ref.name,
+                replyToMessageId,
+              });
+              params.runtime.log?.(`Deliver: file "${ref.name}" sent successfully`);
+            } catch (err) {
+              params.runtime.error?.(`Deliver: sendMedia failed for "${ref.name}": ${String(err)}`);
+              // Fallback to text with file info
+              await sendTextMessage(feishuCfg, {
+                to: chatId,
+                text: `📎 ${ref.name}: ${filePath}`,
+                replyToMessageId,
+              });
+            }
           }
           return;
         }
 
-        // Regular text delivery
+        // Regular text delivery (no file references)
         const converted = core.channel.text.convertMarkdownTables(text, tableMode);
         const formattedText = formatMentionsForFeishu(converted);
         const chunks = core.channel.text.chunkTextWithMode(
@@ -294,7 +266,7 @@ export function createReplyDispatcher(params: CreateReplyDispatcherParams) {
 
         params.runtime.log?.(`Deliver: sending ${chunks.length} chunks to ${chatId}`);
         for (const chunk of chunks) {
-          await sendTextMessage(feishuCfg!, {
+          await sendTextMessage(feishuCfg, {
             to: chatId,
             text: chunk,
             replyToMessageId,

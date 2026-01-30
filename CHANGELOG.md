@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 > This project is forked from [samzong/clawdbot-plugin-feishu](https://github.com/samzong/clawdbot-plugin-feishu). Thanks to the original author for the foundation.
 
+## [0.1.6] - 2025-01-30
+
+### Changed
+
+- **File sending format**: Use explicit `![name](file:///path)` format instead of auto-detecting paths
+  - Avoids false positives with normal text that looks like paths
+  - Similar to Markdown image syntax, easy for Agent to learn
+  - Examples:
+    - `![图片](file:///home/user/image.png)` - absolute path
+    - `![报告](file://./docs/report.pdf)` - relative path  
+    - `![Photo](https://example.com/photo.jpg)` - URL
+  - Agent prompt updated with file sending instructions
+
 ## [0.1.5] - 2025-01-30
 
 ### Added

@@ -103,6 +103,10 @@ export const feishuChannel: ChannelPlugin<ResolvedAccount> = {
     messageToolHints: () => [
       "- Feishu history: use listMessages({ chatId, pageSize?, startTime?, endTime? }) to retrieve conversation history.",
       '- Feishu mentions: use <at user_id="open_id">Name</at> format. Example: <at user_id="ou_xxx">Alice</at> creates a clickable mention.',
+      "- Feishu files: use ![name](file:///path) format to send files. Examples:",
+      "    ![图片](file:///home/user/image.png) - send local file",
+      "    ![报告](file://./docs/report.pdf) - send relative path file",
+      "    ![Photo](https://example.com/photo.jpg) - send from URL",
       "- Feishu targeting: omit `target` to reply to current conversation. Explicit: `user:open_id` or `chat:chat_id`.",
       "- Feishu supports interactive cards for rich messages.",
     ],
