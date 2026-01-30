@@ -1,5 +1,6 @@
 /**
  * WebSocket gateway for real-time Feishu events.
+ * Includes automatic reconnection with exponential backoff.
  */
 
 import * as Lark from "@larksuiteoapi/node-sdk";
@@ -9,6 +10,14 @@ import type { MessageReceivedEvent, BotAddedEvent, BotRemovedEvent } from "../ty
 import { createWsClient, probeConnection } from "../api/client.js";
 import { handleMessage, createBatchFlushHandler } from "./handler.js";
 import { BatchProcessor } from "./batch-processor.js";
+
+// ============================================================================
+// Reconnection Configuration
+// ============================================================================
+
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 60000;
+const RECONNECT_MAX_ATTEMPTS = 20;
 
 // ============================================================================
 // Types
@@ -26,6 +35,9 @@ export interface GatewayState {
   wsClient: Lark.WSClient | null;
   chatHistories: Map<string, HistoryEntry[]>;
   batchProcessor: BatchProcessor | null;
+  isReconnecting: boolean;
+  reconnectAttempts: number;
+  shouldStop: boolean;
 }
 
 // ============================================================================
@@ -38,6 +50,9 @@ const state: GatewayState = {
   wsClient: null,
   chatHistories: new Map(),
   batchProcessor: null,
+  isReconnecting: false,
+  reconnectAttempts: 0,
+  shouldStop: false,
 };
 
 export function getBotName(): string | undefined {
@@ -48,8 +63,22 @@ export function setBotInfo(openId: string | undefined, name: string | undefined)
   state.botOpenId = openId;
   state.botName = name;
 }
+
 export function getBotOpenId(): string | undefined {
   return state.botOpenId;
+}
+
+// ============================================================================
+// Reconnection Helpers
+// ============================================================================
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function calculateBackoffDelay(attempt: number): number {
+  const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt);
+  return Math.min(delay, RECONNECT_MAX_DELAY_MS);
 }
 
 // ============================================================================
@@ -65,6 +94,11 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
   if (!feishuCfg) {
     throw new Error("Feishu not configured");
   }
+
+  // Reset state
+  state.shouldStop = false;
+  state.isReconnecting = false;
+  state.reconnectAttempts = 0;
 
   try {
     const probeResult = await probeConnection(feishuCfg);
@@ -94,11 +128,7 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
     onFlush,
   });
 
-  log("Gateway: starting WebSocket connection...");
-
-  const wsClient = createWsClient(feishuCfg);
-  state.wsClient = wsClient;
-
+  // Create event dispatcher (shared across reconnections)
   const eventDispatcher = new Lark.EventDispatcher({});
 
   eventDispatcher.register({
@@ -133,42 +163,108 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
     },
   });
 
-  return new Promise<void>((_resolve, reject) => {
-    const onAbort = () => {
-      if (state.batchProcessor) {
-        state.batchProcessor.dispose();
-        state.batchProcessor = null;
-      }
-      if (state.wsClient) {
-        try {
-          state.wsClient = null;
-        } catch {
-          // Ignore close errors
-        }
-      }
-      reject(new Error("Gateway aborted"));
-    };
-
-    if (abortSignal?.aborted) {
-      onAbort();
-      return;
+  // Handle abort signal
+  const onAbort = () => {
+    log("Gateway: abort signal received, stopping...");
+    state.shouldStop = true;
+    if (state.batchProcessor) {
+      state.batchProcessor.dispose();
+      state.batchProcessor = null;
     }
+    if (state.wsClient) {
+      state.wsClient = null;
+    }
+  };
 
-    abortSignal?.addEventListener("abort", onAbort, { once: true });
+  if (abortSignal?.aborted) {
+    onAbort();
+    throw new Error("Gateway aborted before start");
+  }
 
-    wsClient.start({ eventDispatcher }).then(
-      () => {
-        log("Gateway: WebSocket client started");
-      },
-      (err: Error) => {
-        error(`Gateway: WebSocket connection failed: ${err.message}`);
-        reject(err);
+  abortSignal?.addEventListener("abort", onAbort, { once: true });
+
+  // Start WebSocket with reconnection loop
+  return startWithReconnect(feishuCfg, eventDispatcher, { log, error });
+}
+
+/**
+ * Start WebSocket connection with automatic reconnection on failure.
+ */
+async function startWithReconnect(
+  feishuCfg: Config,
+  eventDispatcher: Lark.EventDispatcher,
+  logger: { log: (msg: string) => void; error: (msg: string) => void }
+): Promise<void> {
+  const { log, error } = logger;
+
+  while (!state.shouldStop && state.reconnectAttempts < RECONNECT_MAX_ATTEMPTS) {
+    try {
+      log(
+        `Gateway: starting WebSocket connection... (attempt ${state.reconnectAttempts + 1}/${RECONNECT_MAX_ATTEMPTS})`
+      );
+
+      // Create fresh WebSocket client for each attempt
+      const wsClient = createWsClient(feishuCfg);
+      state.wsClient = wsClient;
+
+      // Start the WebSocket client
+      await wsClient.start({ eventDispatcher });
+
+      // Connection successful - reset attempts
+      state.reconnectAttempts = 0;
+      state.isReconnecting = false;
+      log("Gateway: WebSocket client started successfully");
+
+      // The SDK's start() resolves immediately after connection.
+      // We need to keep the gateway running, so we wait indefinitely
+      // until shouldStop is set or the connection drops.
+      await new Promise<void>((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (state.shouldStop) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 1000);
+      });
+
+      // If we reach here and shouldStop is true, exit cleanly
+      if (state.shouldStop) {
+        log("Gateway: stopping due to abort signal");
+        return;
       }
-    );
-  });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      state.reconnectAttempts++;
+      state.isReconnecting = true;
+
+      if (state.shouldStop) {
+        log("Gateway: stopping due to abort signal during reconnection");
+        return;
+      }
+
+      if (state.reconnectAttempts >= RECONNECT_MAX_ATTEMPTS) {
+        error(
+          `Gateway: max reconnection attempts (${RECONNECT_MAX_ATTEMPTS}) reached. Last error: ${errorMessage}`
+        );
+        throw new Error(`WebSocket connection failed after ${RECONNECT_MAX_ATTEMPTS} attempts`);
+      }
+
+      const delay = calculateBackoffDelay(state.reconnectAttempts);
+      error(
+        `Gateway: WebSocket connection failed: ${errorMessage}. Reconnecting in ${delay}ms (attempt ${state.reconnectAttempts}/${RECONNECT_MAX_ATTEMPTS})`
+      );
+
+      await sleep(delay);
+    }
+  }
+
+  if (state.shouldStop) {
+    log("Gateway: stopped by user request");
+  }
 }
 
 export async function stopGateway(): Promise<void> {
+  state.shouldStop = true;
   if (state.batchProcessor) {
     state.batchProcessor.dispose();
     state.batchProcessor = null;
@@ -179,4 +275,6 @@ export async function stopGateway(): Promise<void> {
   state.botOpenId = undefined;
   state.botName = undefined;
   state.chatHistories.clear();
+  state.isReconnecting = false;
+  state.reconnectAttempts = 0;
 }

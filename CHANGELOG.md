@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 > This project is forked from [samzong/clawdbot-plugin-feishu](https://github.com/samzong/clawdbot-plugin-feishu). Thanks to the original author for the foundation.
 
+## [0.1.2] - 2025-01-30
+
+### Fixed
+
+- **WebSocket Auto-Reconnect**: Gateway now automatically reconnects when connection drops
+  - Exponential backoff: 1s → 2s → 4s → ... → 60s (max)
+  - Up to 20 retry attempts before giving up
+  - Detailed logging for connection state changes
+  - Previously, network fluctuations would silently drop the connection, causing missed messages
+
+### Changed
+
+- **Mention Format**: Now uses Feishu native format throughout
+  - Inbound: Non-bot mentions preserved as `<at user_id="ou_xxx">Name</at>` (was `@[Name](ou_xxx)`)
+  - Outbound: Agent should use `<at user_id="ou_xxx">Name</at>` directly
+  - Legacy `@[Name](open_id)` format still supported for backward compatibility
+  - This fixes issues with usernames containing special characters like brackets (e.g., `Vacuum[吸尘器]`)
+
 ## [0.1.1] - 2025-01-30
 
 ### Fixed

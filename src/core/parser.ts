@@ -1,5 +1,6 @@
 /**
  * Message event parsing utilities.
+ * Uses Feishu native mention format throughout for compatibility.
  */
 
 import type {
@@ -59,7 +60,9 @@ export function isBotMentioned(
 
 /**
  * Process mentions in message content.
- * Removes bot mentions completely, preserves non-bot mentions as @[name](open_id) format.
+ * Removes bot mentions completely, preserves non-bot mentions in Feishu native format.
+ *
+ * Feishu native format: <at user_id="open_id">Name</at>
  */
 export function stripMentions(
   text: string,
@@ -76,15 +79,18 @@ export function stripMentions(
     const isBotMention = botOpenId && mentionOpenId === botOpenId;
 
     if (isBotMention) {
+      // Remove bot mentions entirely
       const namePattern = new RegExp(`@${escapeRegex(mention.name)}\\s*`, "g");
       result = result.replace(namePattern, "").trim();
       result = result.replace(new RegExp(escapeRegex(mention.key), "g"), "").trim();
     } else if (mentionOpenId) {
-      const replacement = `@[${mention.name}](${mentionOpenId})`;
+      // Replace with Feishu native format for non-bot mentions
+      const replacement = `<at user_id="${mentionOpenId}">${mention.name}</at>`;
       const namePattern = new RegExp(`@${escapeRegex(mention.name)}`, "g");
       result = result.replace(namePattern, replacement);
       result = result.replace(new RegExp(escapeRegex(mention.key), "g"), replacement);
     } else {
+      // Remove mentions without open_id
       const namePattern = new RegExp(`@${escapeRegex(mention.name)}\\s*`, "g");
       result = result.replace(namePattern, "").trim();
       result = result.replace(new RegExp(escapeRegex(mention.key), "g"), "").trim();
@@ -160,12 +166,14 @@ export function parseMessageEvent(event: MessageReceivedEvent, botOpenId?: strin
 }
 
 // ============================================================================
-// Outbound Mention Formatting
+// Outbound Mention Formatting (Legacy Support)
 // ============================================================================
 
 /**
  * Convert @[Name](open_id) format to Feishu native <at user_id="open_id">Name</at> format.
- * This is the reverse of stripMentions for outbound messages.
+ * This provides backward compatibility for any code still using the old format.
+ *
+ * Note: The preferred approach is to use Feishu native format directly.
  */
 export function formatMentionsForFeishu(text: string): string {
   const mentionPattern = /@\[([^\]]+)\]\(([^)]+)\)/g;

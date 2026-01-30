@@ -102,7 +102,7 @@ export const feishuChannel: ChannelPlugin<ResolvedAccount> = {
   agentPrompt: {
     messageToolHints: () => [
       "- Feishu history: use listMessages({ chatId, pageSize?, startTime?, endTime? }) to retrieve conversation history.",
-      "- Feishu mentions: use @[Name](open_id) format to mention users in replies. Example: @[Alice](ou_xxx) will be converted to native mention.",
+      '- Feishu mentions: use <at user_id="open_id">Name</at> format. Example: <at user_id="ou_xxx">Alice</at> creates a clickable mention.',
       "- Feishu targeting: omit `target` to reply to current conversation. Explicit: `user:open_id` or `chat:chat_id`.",
       "- Feishu supports interactive cards for rich messages.",
     ],
