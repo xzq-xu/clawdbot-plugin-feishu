@@ -65,18 +65,78 @@ function isImageExtension(fileName: string): boolean {
  * Check if a string is a local file path (not a URL).
  */
 function isLocalPath(urlOrPath: string): boolean {
-  if (urlOrPath.startsWith("/") || urlOrPath.startsWith("~")) {
+  if (urlOrPath.startsWith("/") || urlOrPath.startsWith("~") || urlOrPath.startsWith("./")) {
     return true;
   }
   if (/^[a-zA-Z]:/.test(urlOrPath)) {
     return true; // Windows drive letter
   }
+  // Check for file:// protocol
+  if (urlOrPath.startsWith("file://")) {
+    return true;
+  }
   try {
     const url = new URL(urlOrPath);
     return url.protocol === "file:";
   } catch {
-    return true; // Not a valid URL, treat as local path
+    // Not a valid URL - could be a relative path like "folder/file.png"
+    // Check if it looks like a path (contains / or \ or ends with known extension)
+    if (urlOrPath.includes("/") || urlOrPath.includes("\\")) {
+      return true;
+    }
+    return false;
   }
+}
+
+/**
+ * Resolve file path, trying multiple possible locations.
+ * Returns the resolved absolute path or null if not found.
+ */
+function resolveFilePath(inputPath: string): string | null {
+  // Remove file:// prefix if present
+  let cleanPath = inputPath;
+  if (cleanPath.startsWith("file://")) {
+    cleanPath = cleanPath.slice(7);
+    // Handle file:/// (3 slashes = absolute) vs file:// (2 slashes)
+    // file:///home/user -> /home/user
+    // file://./path -> ./path
+  }
+
+  // Expand ~ to home directory
+  if (cleanPath.startsWith("~")) {
+    cleanPath = cleanPath.replace("~", process.env["HOME"] ?? "");
+  }
+
+  // If it's an absolute path, just check if it exists
+  if (path.isAbsolute(cleanPath)) {
+    if (fs.existsSync(cleanPath)) {
+      return cleanPath;
+    }
+    return null;
+  }
+
+  // For relative paths, try multiple base directories
+  const searchPaths = [
+    // Current working directory
+    path.resolve(process.cwd(), cleanPath),
+    // Home directory
+    path.resolve(process.env["HOME"] ?? "", cleanPath),
+    // Clawdbot extensions directory
+    path.resolve(process.env["HOME"] ?? "", ".clawdbot", cleanPath),
+    // Common workspaces
+    path.resolve("/workspaces", cleanPath),
+    path.resolve(process.env["HOME"] ?? "", "workspaces", cleanPath),
+    // Just the path as-is (in case it's already correct)
+    cleanPath,
+  ];
+
+  for (const searchPath of searchPaths) {
+    if (fs.existsSync(searchPath)) {
+      return searchPath;
+    }
+  }
+
+  return null;
 }
 
 // ============================================================================
@@ -292,16 +352,17 @@ export async function sendMedia(config: Config, params: SendMediaParams): Promis
     name = params.fileName ?? "file";
   } else if (params.mediaUrl) {
     if (isLocalPath(params.mediaUrl)) {
-      // Local file path
-      const filePath = params.mediaUrl.startsWith("~")
-        ? params.mediaUrl.replace("~", process.env["HOME"] ?? "")
-        : params.mediaUrl.replace("file://", "");
+      // Local file path - try to resolve it
+      const resolvedPath = resolveFilePath(params.mediaUrl);
 
-      if (!fs.existsSync(filePath)) {
-        throw new Error(`Local file not found: ${filePath}`);
+      if (!resolvedPath) {
+        throw new Error(
+          `Local file not found: ${params.mediaUrl} (searched in cwd, home, /workspaces)`
+        );
       }
-      buffer = fs.readFileSync(filePath);
-      name = params.fileName ?? path.basename(filePath);
+
+      buffer = fs.readFileSync(resolvedPath);
+      name = params.fileName ?? path.basename(resolvedPath);
     } else {
       // Remote URL
       const response = await fetch(params.mediaUrl);

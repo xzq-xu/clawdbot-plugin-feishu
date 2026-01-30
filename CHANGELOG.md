@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 > This project is forked from [samzong/clawdbot-plugin-feishu](https://github.com/samzong/clawdbot-plugin-feishu). Thanks to the original author for the foundation.
 
+## [0.1.7] - 2025-01-30
+
+### Fixed
+
+- **File path resolution**: Now searches multiple directories for relative paths
+  - Searches: current working directory, home directory, ~/.clawdbot, /workspaces
+  - Better error messages showing which paths were searched
+  - Fixes "Local file not found" errors when Agent uses relative paths
+
 ## [0.1.6] - 2025-01-30
 
 ### Changed
@@ -72,102 +81,30 @@ All notable changes to this project will be documented in this file.
   - Exponential backoff: 1s → 2s → 4s → ... → 60s (max)
   - Up to 20 retry attempts before giving up
   - Detailed logging for connection state changes
-  - Previously, network fluctuations would silently drop the connection, causing missed messages
 
 ### Changed
 
 - **Mention Format**: Now uses Feishu native format throughout
-  - Inbound: Non-bot mentions preserved as `<at user_id="ou_xxx">Name</at>` (was `@[Name](ou_xxx)`)
-  - Outbound: Agent should use `<at user_id="ou_xxx">Name</at>` directly
-  - Legacy `@[Name](open_id)` format still supported for backward compatibility
-  - This fixes issues with usernames containing special characters like brackets (e.g., `Vacuum[吸尘器]`)
 
 ## [0.1.1] - 2025-01-30
 
 ### Fixed
 
-- **Mention Format Conversion**: `@[Name](open_id)` now correctly converts to Feishu native `<at user_id="...">` tags when sending messages
-  - Previously the format was preserved in code but not applied during `sendTextMessage()` and `editMessage()`
-  - Agent responses with mentions like `@[张三](ou_xxx)` now render as clickable @mentions in Feishu
+- **Mention Format Conversion**: `@[Name](open_id)` now correctly converts to Feishu native `<at user_id="...">` tags
 
 ## [0.1.0] - 2025-01-29
 
 ### Added
 
 - **Batch Message Processing**: Human-like message handling for group chats
-  - Bot now buffers messages and responds once with full context (like a human reading catch-up messages)
-  - `@mention` serves as a trigger mechanism, not a special message type
-  - Extensible trigger system (`src/core/triggers/`) for future trigger types (keywords, scheduled, etc.)
-- **Startup Window Mode**: 10-second initial buffer to collect all pending messages after reconnect
-- **Realtime Mode**: 500ms debounce after trigger for immediate responses
-- **Idle Flush**: Automatic flush after 1 second of inactivity
-- **DM Bypass**: Direct messages skip batching for immediate response
-- **Mention Format Preservation**: Non-bot mentions are preserved with open_id for Agent to @ users
-  - Inbound: `@张三` → `@[张三](ou_xxx)` in message content + `mentions[]` array in `ParsedMessage`
-  - Outbound: `@[张三](ou_xxx)` → `<at user_id="ou_xxx">张三</at>` via `formatMentionsForFeishu()`
-  - Bot mentions are stripped completely (no noise for the Agent)
 - **History Messages API**: `listMessages()` for fetching chat history with pagination
-
-### Architecture
-
-```
-src/core/
-├── triggers/
-│   ├── index.ts           # Trigger interface (extensible)
-│   └── mention.ts         # MentionTrigger implementation
-├── batch-processor.ts     # Core batching logic
-├── handler.ts             # Message routing
-└── gateway.ts             # Lifecycle management
-```
 
 ## [0.0.9] - 2025-01-29
 
 ### Fixed
 
 - **Message History Order**: `feishu_list_messages` now returns newest messages first
-  - Added `sort_type: "ByCreateTimeDesc"` parameter to Feishu API call
-  - Previously returned oldest messages, making recent context unavailable
 
-## [0.0.8] - 2025-01-28
+## [0.0.3 - 0.0.8] - 2025-01-27 to 2025-01-28
 
-### Fixed
-
-- Return correct tool result format for Clawdbot compatibility
-- Add better error handling and logging for `listMessages`
-
-## [0.0.7] - 2025-01-28
-
-### Fixed
-
-- Add `@sinclair/typebox` to dependencies
-
-## [0.0.6] - 2025-01-28
-
-### Fixed
-
-- Use correct Clawdbot tool interface with `execute` method
-
-## [0.0.5] - 2025-01-28
-
-### Changed
-
-- Rename package from `@samzong/feishu` to `@xzq_xu/feishu`
-- Credit original repository in documentation
-
-## [0.0.4] - 2025-01-28
-
-### Fixed
-
-- Simplify bot identity prompt for clearer agent understanding
-- Use correct API endpoint for bot info
-- Probe bot info in `startAccount` before gateway starts
-
-## [0.0.3] - 2025-01-27
-
-### Added
-
-- Initial fork from [samzong/clawdbot-plugin-feishu](https://github.com/samzong/clawdbot-plugin-feishu)
-- Basic Feishu/Lark channel support for Clawdbot
-- WebSocket-based event handling
-- Message send/receive capabilities
-- Access policy engine (DM and group policies)
+- Initial fork and various fixes
