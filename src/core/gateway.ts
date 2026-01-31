@@ -20,11 +20,33 @@ const RECONNECT_MAX_DELAY_MS = 60000;
 const RECONNECT_MAX_ATTEMPTS = 20;
 
 // ============================================================================
-// Event Deduplication
+// Event Deduplication & Message Watermark
 // ============================================================================
 
 const DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours (Feishu's event_id uniqueness window)
 const DEDUP_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // Cleanup every hour
+
+// Watermark: track the latest message create_time per chat to filter stale messages on reconnect
+const chatWatermarks = new Map<string, number>();
+
+/**
+ * Check if message is stale based on watermark.
+ * Returns true if message should be skipped.
+ */
+function isStaleMessage(chatId: string, createTime: number): boolean {
+  const watermark = chatWatermarks.get(chatId) ?? 0;
+  return createTime <= watermark;
+}
+
+/**
+ * Update watermark for a chat after successfully processing a message.
+ */
+function updateWatermark(chatId: string, createTime: number): void {
+  const current = chatWatermarks.get(chatId) ?? 0;
+  if (createTime > current) {
+    chatWatermarks.set(chatId, createTime);
+  }
+}
 
 interface DedupEntry {
   timestamp: number;
@@ -77,6 +99,88 @@ function stopDedupCleanup(): void {
     dedupCleanupTimer = null;
   }
   processedEvents.clear();
+}
+
+// ============================================================================
+// Per-Chat Message Queue (Serial Processing)
+// ============================================================================
+
+interface QueuedMessage {
+  event: MessageReceivedEvent;
+  handler: () => Promise<void>;
+}
+
+interface ChatQueue {
+  messages: QueuedMessage[];
+  processing: boolean;
+}
+
+const chatQueues = new Map<string, ChatQueue>();
+
+/**
+ * Enqueue a message for serial processing within its chat.
+ * Messages in the same chat are processed one at a time.
+ * Different chats can process in parallel.
+ */
+function enqueueMessage(
+  chatId: string,
+  event: MessageReceivedEvent,
+  handler: () => Promise<void>,
+  logger: { log: (msg: string) => void; error: (msg: string) => void }
+): void {
+  let queue = chatQueues.get(chatId);
+  if (!queue) {
+    queue = { messages: [], processing: false };
+    chatQueues.set(chatId, queue);
+  }
+
+  queue.messages.push({ event, handler });
+  logger.log(`Gateway: message queued for chat ${chatId} (queue size: ${queue.messages.length})`);
+
+  // Start processing if not already running
+  if (!queue.processing) {
+    processQueue(chatId, logger);
+  }
+}
+
+/**
+ * Process messages in a chat queue serially.
+ */
+async function processQueue(
+  chatId: string,
+  logger: { log: (msg: string) => void; error: (msg: string) => void }
+): Promise<void> {
+  const queue = chatQueues.get(chatId);
+  if (!queue || queue.processing) return;
+
+  queue.processing = true;
+  logger.log(`Gateway: starting queue processing for chat ${chatId}`);
+
+  while (queue.messages.length > 0) {
+    const item = queue.messages.shift();
+    if (item) {
+      try {
+        await item.handler();
+      } catch (err) {
+        logger.error(`Gateway: error processing queued message: ${String(err)}`);
+      }
+    }
+  }
+
+  queue.processing = false;
+  logger.log(`Gateway: queue processing completed for chat ${chatId}`);
+
+  // Clean up empty queues
+  if (queue.messages.length === 0) {
+    chatQueues.delete(chatId);
+  }
+}
+
+/**
+ * Clear all chat queues (for shutdown).
+ */
+function clearAllQueues(): void {
+  chatQueues.clear();
 }
 
 // ============================================================================
@@ -195,30 +299,69 @@ export async function startGateway(options: GatewayOptions): Promise<void> {
   // Start dedup cleanup timer
   startDedupCleanup();
 
+  // Max age for messages (5 minutes) - skip messages older than this
+  const MAX_MESSAGE_AGE_MS = 5 * 60 * 1000;
+
   eventDispatcher.register({
     "im.message.receive_v1": async (data: unknown) => {
-      try {
-        const event = data as MessageReceivedEvent;
+      // IMPORTANT: Feishu requires event handlers to complete within 3 seconds,
+      // otherwise it triggers a retry/re-push mechanism. We must return quickly
+      // and process the message asynchronously (fire-and-forget).
+      // See: https://open.feishu.cn/document/server-side-sdk/nodejs-sdk/handling-events
 
-        // Deduplication: skip if event already processed
-        const dedupKey = event.event_id ?? event.message?.message_id;
-        if (dedupKey && isDuplicateEvent(dedupKey)) {
-          log(`Gateway: skipping duplicate event ${dedupKey}`);
-          return;
-        }
+      const event = data as MessageReceivedEvent;
 
-        await handleMessage({
-          cfg,
-          event,
-          botOpenId: state.botOpenId,
-          botName: state.botName,
-          runtime,
-          chatHistories: state.chatHistories,
-          batchProcessor: state.batchProcessor ?? undefined,
-        });
-      } catch (err) {
-        error(`Gateway: error handling message: ${String(err)}`);
+      // Deduplication: skip if event already processed
+      const dedupKey = event.event_id ?? event.message?.message_id;
+      if (dedupKey && isDuplicateEvent(dedupKey)) {
+        log(`Gateway: skipping duplicate event ${dedupKey}`);
+        return; // Return quickly to ACK
       }
+
+      const chatId = event.message?.chat_id;
+      const messageCreateTime = Number(event.message?.create_time);
+
+      // Watermark check: skip messages older than the last processed message for this chat
+      // This handles reconnection replays where Feishu re-sends unacknowledged messages
+      if (chatId && messageCreateTime && isStaleMessage(chatId, messageCreateTime)) {
+        log(`Gateway: skipping stale message (watermark filter, chat=${chatId})`);
+        return; // Return quickly to ACK
+      }
+
+      // Also skip very old messages as a fallback (e.g., if watermark is not set yet)
+      if (messageCreateTime) {
+        const messageAge = Date.now() - messageCreateTime;
+        if (messageAge > MAX_MESSAGE_AGE_MS) {
+          log(`Gateway: skipping stale message (age=${Math.round(messageAge / 1000)}s, max=${MAX_MESSAGE_AGE_MS / 1000}s)`);
+          return; // Return quickly to ACK
+        }
+      }
+
+      // Update watermark BEFORE async processing to prevent duplicate handling
+      if (chatId && messageCreateTime) {
+        updateWatermark(chatId, messageCreateTime);
+      }
+
+      // Enqueue message for serial processing within this chat
+      // This ensures we return within 3 seconds to ACK the event,
+      // while messages in the same chat are processed one at a time (no race conditions)
+      const queueChatId = chatId ?? "unknown";
+      enqueueMessage(
+        queueChatId,
+        event,
+        async () => {
+          await handleMessage({
+            cfg,
+            event,
+            botOpenId: state.botOpenId,
+            botName: state.botName,
+            runtime,
+            chatHistories: state.chatHistories,
+            batchProcessor: state.batchProcessor ?? undefined,
+          });
+        },
+        { log, error }
+      );
     },
 
     "im.chat.member.bot.added_v1": async (data: unknown) => {
@@ -349,6 +492,7 @@ export async function stopGateway(): Promise<void> {
   state.chatHistories.clear();
   state.isReconnecting = false;
   state.reconnectAttempts = 0;
-  // Stop dedup cleanup timer
+  // Stop dedup cleanup timer and clear queues
   stopDedupCleanup();
+  clearAllQueues();
 }

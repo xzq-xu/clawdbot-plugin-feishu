@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 > Inspired by [samzong/moltbot-channel-feishu](https://github.com/samzong/moltbot-channel-feishu).
 
+## [0.2.4] - 2026-01-31
+
+### Fixed
+
+- **Message Duplicate Prevention**: Fixed critical bug where Feishu re-pushed messages after WebSocket reconnection
+  - Root cause: Event handlers took >3 seconds (waiting for Agent), triggering Feishu's retry mechanism
+  - Solution: Immediate ACK + async processing via per-chat message queue
+- **Per-Chat Message Queue**: Messages in the same chat are processed serially to prevent race conditions
+  - Different chats can process in parallel for better performance
+  - Queue size logged for debugging
+- **Message Watermark**: Track latest `create_time` per chat to filter stale messages on reconnect
+- **Message Age Filter**: Skip messages older than 5 minutes as fallback protection
+
+### Changed
+
+- **Async Event Handling**: Event handlers now return immediately (<3s) to ACK, processing happens in background
+- **MessagePayload Type**: Added `create_time` and `update_time` fields to match actual Feishu API response
+
 ## [0.2.1] - 2026-01-31
 
 ### Added

@@ -24,6 +24,8 @@ export interface MessagePayload {
   message_type: string;
   content: string;
   mentions?: MessageMention[];
+  create_time?: string;
+  update_time?: string;
 }
 
 /** Mention in a message */
