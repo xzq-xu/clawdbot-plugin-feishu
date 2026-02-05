@@ -151,9 +151,6 @@ export const AccountConfigSchema = z
 
     // Media (account-level override)
     mediaMaxMb: z.number().positive().optional(),
-
-    // Response prefix for all messages from this account
-    responsePrefix: z.string().optional(),
   })
   .strict();
 
@@ -213,9 +210,6 @@ export const ConfigSchema = z
     // Threading
     replyToMode: ReplyToModeSchema.optional().default("first"),
     configWrites: z.boolean().optional(),
-
-    // Response prefix for all messages
-    responsePrefix: z.string().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -291,7 +285,6 @@ export interface MergedAccountConfig {
   textChunkLimit?: number;
   chunkMode?: "length" | "newline";
   mediaMaxMb?: number;
-  responsePrefix?: string;
   markdown?: MarkdownConfig;
   blockStreamingCoalesce?: StreamingCoalesce;
   streamingCard?: StreamingCard;
@@ -443,7 +436,6 @@ export function resolveAccount(
     textChunkLimit: accountCfg?.textChunkLimit ?? config?.textChunkLimit,
     chunkMode: accountCfg?.chunkMode ?? config?.chunkMode,
     mediaMaxMb: accountCfg?.mediaMaxMb ?? config?.mediaMaxMb,
-    responsePrefix: accountCfg?.responsePrefix ?? config?.responsePrefix,
     markdown: accountCfg?.markdown ?? config?.markdown,
     blockStreamingCoalesce: accountCfg?.blockStreamingCoalesce ?? config?.blockStreamingCoalesce,
     streamingCard: accountCfg?.streamingCard ?? config?.streamingCard,

@@ -11,6 +11,9 @@
 - **History Messages API** — Fetch chat history with pagination for context gathering
 - **Flexible Access Control** — DM policies (open/pairing/allowlist) and group policies (open/allowlist/disabled)
 - **Dual Domain Support** — Works with both Feishu (China) and Lark (International)
+- **Interactive Card Tool** — AI can send rich interactive cards with buttons, layouts, and formatted content
+- **Multi-Account Support** — Configure multiple Feishu apps in a single OpenClaw instance
+- **Per-Sender Tool Policy** — Fine-grained tool permissions based on message sender identity
 
 ## Install
 
@@ -187,6 +190,113 @@ Example with streaming enabled:
         "title": "正在思考..."
       }
     }
+  }
+}
+```
+
+### Multi-Account Support
+
+Configure multiple Feishu apps in a single OpenClaw instance:
+
+```json
+{
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "domain": "feishu",
+      "dmPolicy": "pairing",
+      "accounts": {
+        "main": {
+          "appId": "cli_main_xxx",
+          "appSecret": "secret1",
+          "botName": "Main Bot"
+        },
+        "support": {
+          "appId": "cli_support_xxx",
+          "appSecretFile": "~/.secrets/support-bot.txt",
+          "botName": "Support Bot",
+          "dmPolicy": "allowlist",
+          "allowFrom": ["ou_admin1", "ou_admin2"]
+        }
+      }
+    }
+  }
+}
+```
+
+Each account inherits from the base config and can override any setting. The `appSecretFile` option allows reading secrets from a file instead of storing them in config.
+
+### Per-Sender Tool Policy (toolsBySender)
+
+Configure tool permissions based on message sender within groups:
+
+```json
+{
+  "channels": {
+    "feishu": {
+      "groups": {
+        "oc_your_group_id": {
+          "requireMention": false,
+          "toolsBySender": {
+            "张三": { "deny": ["shell", "write_file"] },
+            "ou_admin_id": { "allow": ["*"] },
+            "*": { "allow": ["web_search", "feishu_card"] }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+**Resolution priority:** `toolsBySender[senderId]` > `toolsBySender[senderName]` > `tools` > `toolsBySender["*"]`
+
+## Agent Tools
+
+The plugin registers the following tools that AI agents can use:
+
+### feishu_card
+
+Send rich interactive cards with structured content:
+
+```json
+{
+  "tool": "feishu_card",
+  "args": {
+    "title": "Status Report",
+    "titleTemplate": "green",
+    "elements": [
+      { "tag": "markdown", "content": "**Task**: Completed\n**Duration**: 3.2s" },
+      { "tag": "hr" },
+      { "tag": "action", "actions": [
+        { "tag": "button", "text": { "tag": "plain_text", "content": "View Details" }, "type": "primary", "url": "https://example.com" }
+      ]}
+    ]
+  }
+}
+```
+
+**Supported elements:**
+- `div` — Text block with plain_text or lark_md
+- `hr` — Horizontal divider
+- `markdown` — Markdown content block
+- `note` — Footnote with nested elements
+- `action` — Button row (supports `url` for links, `type`: default/primary/danger)
+- `column_set` — Multi-column layout
+- `img` — Image with img_key
+
+**Header colors:** blue, wathet, turquoise, green, yellow, orange, red, carmine, violet, purple, indigo, grey
+
+### feishu_list_messages
+
+Retrieve message history from a chat:
+
+```json
+{
+  "tool": "feishu_list_messages",
+  "args": {
+    "chatId": "oc_xxx",
+    "pageSize": 20
   }
 }
 ```
