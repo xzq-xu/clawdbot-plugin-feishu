@@ -276,8 +276,15 @@ export function createReplyDispatcher(params: CreateReplyDispatcherParams) {
           return;
         }
 
-        // Check for [NO_RESPONSE] - agent decided not to reply (auto-reply mode)
-        if (text.trim() === "[NO_RESPONSE]" || text.includes("[NO_RESPONSE]")) {
+        // Check for NO_RESPONSE - agent decided not to reply (auto-reply mode)
+        // Support both [NO_RESPONSE] and NO_RESPONSE formats (AI may output either)
+        const trimmedText = text.trim();
+        if (
+          trimmedText === "[NO_RESPONSE]" ||
+          trimmedText === "NO_RESPONSE" ||
+          text.includes("[NO_RESPONSE]") ||
+          text.includes("NO_RESPONSE")
+        ) {
           params.runtime.log?.(`Deliver: agent chose not to respond (auto-reply mode)`);
           return;
         }

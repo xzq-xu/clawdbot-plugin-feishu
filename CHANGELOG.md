@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 > Inspired by [samzong/moltbot-channel-feishu](https://github.com/samzong/moltbot-channel-feishu).
 
+## [0.2.5] - 2026-02-05
+
+### Fixed
+
+- **Auto-Reply NO_RESPONSE Detection**: Now supports both `[NO_RESPONSE]` and `NO_RESPONSE` formats
+  - AI sometimes outputs without brackets, causing unintended message delivery
+  - Detection now handles both exact match and contains check for both formats
+
 ## [0.2.4] - 2026-01-31
 
 ### Fixed
