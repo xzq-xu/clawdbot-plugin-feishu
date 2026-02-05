@@ -19,7 +19,6 @@ All notable changes to this project will be documented in this file.
   - Accounts inherit from base config with per-account overrides
   - New functions: `listAccountIds()`, `getDefaultAccountId()`, `resolveAccount()`, `normalizeAccountId()`
 - **Token Source Tracking**: Track where credentials come from (`config`, `file`, `env`, `none`)
-- **Response Prefix**: New `responsePrefix` config option for prefixing all bot messages
 - **App Secret File**: Support `appSecretFile` for reading secrets from file
 - **Per-Sender Tool Policy (`toolsBySender`)**: Configure tool permissions per user within groups
   - Priority: `toolsBySender[senderId]` > `tools` > wildcard `toolsBySender["*"]`
